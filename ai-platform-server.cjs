@@ -173,6 +173,7 @@ async function resolveUserContext({ userId, facultyId }) {
       source: ctx.keySource,
       provider: ctx.provider,
       model: ctx.model,
+      apiVersion: ctx.apiVersion,
       apiKey: maskKey(ctx.apiKey),
       cache: ctx.debug.cache,
     });
@@ -507,12 +508,11 @@ async function proxyToProvider({
 
   // --- Gemini (Google Generative Language API) ---
   if (normalized === 'gemini' || normalized === 'google') {
-    // Gemini uses v1 (or v1beta2); ignore OpenAI-style apiVersion values like 2024-12-01
-    const geminiApiVersion = apiVersion && apiVersion.startsWith('v') ? apiVersion : 'v1';
-    const url = `https://generativelanguage.googleapis.com/${geminiApiVersion}/models/${model}:generateMessage`;
+    // Gemini is hosted under v1beta2; API key is passed via query param.
+    const geminiApiVersion = apiVersion && apiVersion.startsWith('v') ? apiVersion : 'v1beta2';
+    const url = `https://generativelanguage.googleapis.com/${geminiApiVersion}/models/${model}:generateMessage?key=${apiKey}`;
     const headers = {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
     };
 
     const messages = (payload?.messages || []).map((m) => {
