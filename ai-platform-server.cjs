@@ -509,8 +509,10 @@ async function proxyToProvider({
   // --- Gemini (Google Generative Language API) ---
   if (normalized === 'gemini' || normalized === 'google') {
     // Gemini is hosted under v1beta2; API key is passed via query param.
+    // Normalize common version values (e.g. `v1beta` -> `v1beta2`).
     const geminiApiVersion = apiVersion && apiVersion.startsWith('v') ? apiVersion : 'v1beta2';
-    const url = `https://generativelanguage.googleapis.com/${geminiApiVersion}/models/${model}:generateMessage?key=${apiKey}`;
+    const normalizedGeminiApiVersion = geminiApiVersion === 'v1beta' ? 'v1beta2' : geminiApiVersion;
+    const url = `https://generativelanguage.googleapis.com/${normalizedGeminiApiVersion}/models/${model}:generateMessage?key=${apiKey}`;
     const headers = {
       'Content-Type': 'application/json',
     };
@@ -539,13 +541,58 @@ async function proxyToProvider({
       body: JSON.stringify(body),
     });
 
-    const text = await res.text();
+    let text = await res.text();
     let data = null;
     try {
       data = text ? JSON.parse(text) : null;
     } catch (err) {
       console.warn('⚠️ Gemini response is not valid JSON (may be empty):', text);
       data = { raw: text };
+    }
+
+    // ### Fallback: some Gemini endpoints expect `generateText` style payloads
+    if (
+      res.status === 400 &&
+      typeof text === 'string' &&
+      text.includes('Unknown name "messages"')
+    ) {
+      const prompt = (payload?.messages || [])
+        .map((m) => {
+          const role = m.role === 'assistant' ? 'Assistant' : 'User';
+          return `${role}: ${m.content}`;
+        })
+        .join('\n');
+
+      const fallbackUrl = `https://generativelanguage.googleapis.com/${geminiApiVersion}/models/${model}:generateText?key=${apiKey}`;
+      const fallbackBody = {
+        instances: [{ input: prompt }],
+        ...(payload?.temperature ? { temperature: payload.temperature } : {}),
+        ...(payload?.max_tokens ? { maxOutputTokens: payload.max_tokens } : {}),
+      };
+
+      const fallbackRes = await fetchFn(fallbackUrl, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(fallbackBody),
+      });
+
+      const fallbackText = await fallbackRes.text();
+      let fallbackData = null;
+      try {
+        fallbackData = fallbackText ? JSON.parse(fallbackText) : null;
+      } catch (err) {
+        console.warn('⚠️ Gemini generateText response is not valid JSON:', fallbackText);
+        fallbackData = { raw: fallbackText };
+      }
+
+      console.log('🔁 proxy response (Gemini fallback generateText)', {
+        provider: 'gemini',
+        model,
+        status: fallbackRes.status,
+        snippet: fallbackText ? fallbackText.slice(0, 400) : '',
+      });
+
+      return { status: fallbackRes.status, data: fallbackData };
     }
 
     console.log('🔁 proxy response', {
