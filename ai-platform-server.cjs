@@ -487,6 +487,14 @@ async function proxyToProvider({
       console.warn('⚠️ OpenAI response is not valid JSON (may be empty):', text);
       data = { raw: text };
     }
+
+    console.log('🔁 proxy response', {
+      provider: 'openai',
+      model,
+      status: res.status,
+      snippet: text ? text.slice(0, 400) : '',
+    });
+
     return { status: res.status, data };
   }
 
@@ -530,6 +538,14 @@ async function proxyToProvider({
       console.warn('⚠️ Gemini response is not valid JSON (may be empty):', text);
       data = { raw: text };
     }
+
+    console.log('🔁 proxy response', {
+      provider: 'gemini',
+      model,
+      status: res.status,
+      snippet: text ? text.slice(0, 400) : '',
+    });
+
     return { status: res.status, data };
   }
 
@@ -571,6 +587,14 @@ async function proxyToProvider({
       console.warn('⚠️ Claude response is not valid JSON (may be empty):', text);
       data = { raw: text };
     }
+
+    console.log('🔁 proxy response', {
+      provider: 'claude',
+      model,
+      status: res.status,
+      snippet: text ? text.slice(0, 400) : '',
+    });
+
     return { status: res.status, data };
   }
 
