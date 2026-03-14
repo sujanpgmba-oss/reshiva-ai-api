@@ -509,13 +509,16 @@ async function proxyToProvider({
   // --- Gemini (Google Generative Language API) ---
   if (normalized === 'gemini' || normalized === 'google') {
     // Gemini is hosted under v1beta2; API key is passed via query param.
-    // Normalize common version values (e.g. `v1beta` -> `v1beta2`).
+    // Normalize any version to the supported v1beta2 endpoint.
     const geminiApiVersion = apiVersion && apiVersion.startsWith('v') ? apiVersion : 'v1beta2';
-    const normalizedGeminiApiVersion = geminiApiVersion === 'v1beta' ? 'v1beta2' : geminiApiVersion;
+    const normalizedGeminiApiVersion = geminiApiVersion.startsWith('v1beta') ? 'v1beta2' : 'v1beta2';
     const url = `https://generativelanguage.googleapis.com/${normalizedGeminiApiVersion}/models/${model}:generateMessage?key=${apiKey}`;
     const headers = {
       'Content-Type': 'application/json',
     };
+
+    const redactedUrl = url.replace(/([?&]key=)[^&]+/, '$1<redacted>');
+
 
     const messages = (payload?.messages || []).map((m) => {
       const author = m.role === 'assistant' ? 'assistant' : m.role === 'system' ? 'system' : 'user';
@@ -554,7 +557,7 @@ async function proxyToProvider({
     if (
       res.status === 400 &&
       typeof text === 'string' &&
-      text.includes('Unknown name "messages"')
+      /Unknown name\\?\s*\"?messages\"?/i.test(text)
     ) {
       const prompt = (payload?.messages || [])
         .map((m) => {
@@ -563,7 +566,7 @@ async function proxyToProvider({
         })
         .join('\n');
 
-      const fallbackUrl = `https://generativelanguage.googleapis.com/${geminiApiVersion}/models/${model}:generateText?key=${apiKey}`;
+      const fallbackUrl = `https://generativelanguage.googleapis.com/${normalizedGeminiApiVersion}/models/${model}:generateText?key=${apiKey}`;
       const fallbackBody = {
         instances: [{ input: prompt }],
         ...(payload?.temperature ? { temperature: payload.temperature } : {}),
@@ -585,10 +588,12 @@ async function proxyToProvider({
         fallbackData = { raw: fallbackText };
       }
 
+      const fallbackRedactedUrl = fallbackUrl.replace(/([?&]key=)[^&]+/, '$1<redacted>');
       console.log('🔁 proxy response (Gemini fallback generateText)', {
         provider: 'gemini',
         model,
         status: fallbackRes.status,
+        url: fallbackRedactedUrl,
         snippet: fallbackText ? fallbackText.slice(0, 400) : '',
       });
 
@@ -599,6 +604,7 @@ async function proxyToProvider({
       provider: 'gemini',
       model,
       status: res.status,
+      url: redactedUrl,
       snippet: text ? text.slice(0, 400) : '',
     });
 
