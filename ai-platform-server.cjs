@@ -79,6 +79,17 @@ async function cacheFetch(key, ttl, fetcher) {
   return value;
 }
 
+async function cacheFetchDebug(key, ttl, fetcher) {
+  const cached = cacheGet(key);
+  if (cached.found) {
+    return { value: cached.value, cached: true };
+  }
+
+  const value = await fetcher();
+  cacheSet(key, value, ttl);
+  return { value, cached: false };
+}
+
 function clearCache(namespace) {
   for (const key of cacheStore.keys()) {
     if (key.startsWith(`${namespace}:`)) {
@@ -144,11 +155,31 @@ async function resolveUserContext({ userId, facultyId }) {
     institutionId: null,
     costMultiplier: 1,
     disabledReason: null,
+    debug: {
+      cache: [],
+      selected: null,
+    },
   };
+
+  function logSelection() {
+    if (!ctx.keySource || !ctx.provider || !ctx.model) return;
+    console.log('✅ AI key selected', {
+      source: ctx.keySource,
+      provider: ctx.provider,
+      model: ctx.model,
+      cache: ctx.debug.cache,
+    });
+  }
+
 
   // 1) Faculty (if provided)
   if (facultyId) {
-    const faculty = await cachedQueryOne('faculty_profiles_upv', '*', { user_id: facultyId });
+    const { value: faculty, cached: facultyCached } = await cacheFetchDebug(
+      cacheKey('faculty_profiles_upv', JSON.stringify({ user_id: facultyId })),
+      CACHE_TTL_MS,
+      () => queryOne('faculty_profiles_upv', '*', { user_id: facultyId })
+    );
+
     if (!faculty) {
       ctx.disabledReason = 'faculty_not_found';
       return ctx;
@@ -164,11 +195,18 @@ async function resolveUserContext({ userId, facultyId }) {
       ctx.model = faculty.personal_model;
       ctx.apiVersion = faculty.personal_api_version;
       ctx.keySource = 'faculty_personal';
+      ctx.debug.selected = {
+        source: 'faculty_personal',
+        provider: ctx.provider,
+        model: ctx.model,
+        cache: facultyCached,
+      };
+      logSelection();
       return ctx;
     }
 
     // 1b) platform subscription key
-    const subscription = await cacheFetch(
+    const { value: subscription, cached: subscriptionCached } = await cacheFetchDebug(
       cacheKey('faculty_subscriptions', facultyId),
       CACHE_TTL_MS,
       async () => {
@@ -193,6 +231,13 @@ async function resolveUserContext({ userId, facultyId }) {
       ctx.model = subscription.platform_model;
       ctx.apiVersion = subscription.platform_api_version;
       ctx.keySource = 'faculty_subscription';
+      ctx.debug.selected = {
+        source: 'faculty_subscription',
+        provider: ctx.provider,
+        model: ctx.model,
+        cache: subscriptionCached,
+      };
+      logSelection();
       return ctx;
     }
 
@@ -202,7 +247,11 @@ async function resolveUserContext({ userId, facultyId }) {
 
   // 2) Student
   if (userId) {
-    const profile = await cachedQueryOne('profiles', '*', { id: userId });
+    const { value: profile, cached: profileCached } = await cacheFetchDebug(
+      cacheKey('profiles', JSON.stringify({ id: userId })),
+      CACHE_TTL_MS,
+      () => queryOne('profiles', '*', { id: userId })
+    );
     if (!profile) {
       ctx.disabledReason = 'student_not_found';
       return ctx;
@@ -217,11 +266,18 @@ async function resolveUserContext({ userId, facultyId }) {
       ctx.model = profile.personal_model;
       ctx.apiVersion = profile.personal_api_version;
       ctx.keySource = 'student_personal';
+      ctx.debug.selected = {
+        source: 'student_personal',
+        provider: ctx.provider,
+        model: ctx.model,
+        cache: profileCached,
+      };
+      logSelection();
       return ctx;
     }
 
     // 2b) platform-per-user key (app mode)
-    const verification = await cacheFetch(
+    const { value: verification, cached: verificationCached } = await cacheFetchDebug(
       cacheKey('student_institution_verification', userId),
       CACHE_TTL_MS,
       async () => {
@@ -251,12 +307,23 @@ async function resolveUserContext({ userId, facultyId }) {
         ctx.apiVersion = v.platform_api_version;
         ctx.keySource = 'student_platform';
         ctx.costMultiplier = v.cost_multiplier || ctx.costMultiplier;
+        ctx.debug.selected = {
+          source: 'student_platform',
+          provider: ctx.provider,
+          model: ctx.model,
+          cache: verificationCached,
+        };
+        logSelection();
         return ctx;
       }
 
       // Fallback to institution defaults (B2B) if available
       if (ctx.institutionId) {
-        const inst = await cachedQueryOne('institutions', '*', { id: ctx.institutionId });
+        const { value: inst, cached: institutionCached } = await cacheFetchDebug(
+          cacheKey('institutions', JSON.stringify({ id: ctx.institutionId })),
+          CACHE_TTL_MS,
+          () => queryOne('institutions', '*', { id: ctx.institutionId })
+        );
         if (inst) {
           ctx.costMultiplier = inst.cost_multiplier || ctx.costMultiplier;
 
@@ -267,6 +334,13 @@ async function resolveUserContext({ userId, facultyId }) {
             ctx.model = inst.platform_model;
             ctx.apiVersion = inst.platform_api_version;
             ctx.keySource = 'institution_platform';
+            ctx.debug.selected = {
+              source: 'institution_platform',
+              provider: ctx.provider,
+              model: ctx.model,
+              cache: institutionCached,
+            };
+            logSelection();
             return ctx;
           }
 
@@ -277,6 +351,13 @@ async function resolveUserContext({ userId, facultyId }) {
             ctx.model = inst.default_model;
             ctx.apiVersion = inst.default_api_version;
             ctx.keySource = 'institution_byok';
+            ctx.debug.selected = {
+              source: 'institution_byok',
+              provider: ctx.provider,
+              model: ctx.model,
+              cache: institutionCached,
+            };
+            logSelection();
             return ctx;
           }
 
@@ -287,6 +368,13 @@ async function resolveUserContext({ userId, facultyId }) {
             ctx.model = inst.platform_model;
             ctx.apiVersion = inst.platform_api_version;
             ctx.keySource = 'institution_platform_fallback';
+            ctx.debug.selected = {
+              source: 'institution_platform_fallback',
+              provider: ctx.provider,
+              model: ctx.model,
+              cache: institutionCached,
+            };
+            logSelection();
             return ctx;
           }
         }
@@ -372,6 +460,7 @@ async function proxyToProvider({
 }) {
   const normalized = normalizeProvider(provider);
 
+  // --- OpenAI ---
   if (normalized === 'openai') {
     const url = `https://api.openai.com/v1/chat/completions`;
     const headers = {
@@ -394,7 +483,76 @@ async function proxyToProvider({
     return { status: res.status, data };
   }
 
-  // Add additional providers here as needed.
+  // --- Gemini (Google Generative Language API) ---
+  if (normalized === 'gemini' || normalized === 'google') {
+    const url = `https://generativelanguage.googleapis.com/${apiVersion}/models/${model}:generateMessage`;
+    const headers = {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    };
+
+    const messages = (payload?.messages || []).map((m) => {
+      const author = m.role === 'assistant' ? 'assistant' : m.role === 'system' ? 'system' : 'user';
+      return {
+        author,
+        content: {
+          type: 'text',
+          text: m.content,
+        },
+      };
+    });
+
+    const body = {
+      model,
+      messages,
+      ...(payload?.temperature ? { temperature: payload.temperature } : {}),
+      ...(payload?.max_tokens ? { maxOutputTokens: payload.max_tokens } : {}),
+    };
+
+    const res = await fetchFn(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+    });
+
+    const data = await res.json();
+    return { status: res.status, data };
+  }
+
+  // --- Claude (Anthropic) ---
+  if (normalized === 'claude' || normalized === 'anthropic') {
+    const url = `https://api.anthropic.com/v1/complete`;
+    const headers = {
+      'Content-Type': 'application/json',
+      'X-API-Key': apiKey,
+    };
+
+    // Convert chat messages into a single prompt
+    const messages = payload?.messages || [];
+    const prompt = messages
+      .map((m) => {
+        const role = m.role === 'assistant' ? 'Assistant' : 'Human';
+        return `${role}: ${m.content}`;
+      })
+      .join('\n') + '\nAssistant:';
+
+    const body = {
+      model,
+      prompt,
+      ...(payload?.max_tokens ? { max_tokens_to_sample: payload.max_tokens } : {}),
+      ...(payload?.temperature ? { temperature: payload.temperature } : {}),
+    };
+
+    const res = await fetchFn(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+    });
+
+    const data = await res.json();
+    return { status: res.status, data };
+  }
+
   throw new Error(`Unsupported provider: ${provider}`);
 }
 
