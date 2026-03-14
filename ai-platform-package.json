@@ -2,10 +2,10 @@
   "name": "ai-platform-backend",
   "version": "1.0.0",
   "description": "Backend for AI platform (B2C+B2B+BYOK) with key routing and usage logging.",
-  "main": "ai-platform-server.js",
+  "main": "ai-platform-server.cjs",
   "scripts": {
-    "start": "node ai-platform-server.js",
-    "dev": "nodemon ai-platform-server.js"
+    "start": "node ai-platform-server.cjs",
+    "dev": "nodemon ai-platform-server.cjs"
   },
   "dependencies": {
     "express": "^4.18.2",
