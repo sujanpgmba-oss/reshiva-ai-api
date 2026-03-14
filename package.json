@@ -25,7 +25,7 @@
     
   "preview": "vite preview",
   
-  "start:ai": "node ai-platform-server.js"
+  "start:ai": "node ai-platform-server.cjs"
   },
   
   "dependencies": {
