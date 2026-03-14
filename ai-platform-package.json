@@ -1,0 +1,23 @@
+{
+  "name": "ai-platform-backend",
+  "version": "1.0.0",
+  "description": "Backend for AI platform (B2C+B2B+BYOK) with key routing and usage logging.",
+  "main": "ai-platform-server.js",
+  "scripts": {
+    "start": "node ai-platform-server.js",
+    "dev": "nodemon ai-platform-server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "@supabase/supabase-js": "^2.22.1",
+    "node-fetch": "^2.6.7"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}
