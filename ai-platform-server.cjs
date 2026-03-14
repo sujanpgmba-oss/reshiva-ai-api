@@ -768,9 +768,13 @@ app.post('/api/ai/request', async (req, res) => {
   }
 });
 
-  // Catch-all route to help diagnose 404s (especially in deployed environments)
-  app.use((req, res) => {
-    console.warn('⚠️ Unhandled route', { method: req.method, path: req.path });
-    res.status(404).json({ error: 'not_found', path: req.path });
-  });
+// Catch-all route to help diagnose 404s (especially in deployed environments)
+app.use((req, res) => {
+  console.warn('⚠️ Unhandled route', { method: req.method, path: req.path });
+  res.status(404).json({ error: 'not_found', path: req.path });
+});
+
+app.listen(PORT, () => {
+  console.log(`🚀 AI platform backend listening on http://localhost:${PORT}`);
+});
 
