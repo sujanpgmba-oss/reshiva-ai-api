@@ -161,12 +161,19 @@ async function resolveUserContext({ userId, facultyId }) {
     },
   };
 
+  function maskKey(key) {
+    if (!key || typeof key !== 'string') return '';
+    if (key.length <= 8) return key.replace(/.(?=.{2})/g, '*');
+    return key.slice(0, 4) + '…' + key.slice(-4);
+  }
+
   function logSelection() {
     if (!ctx.keySource || !ctx.provider || !ctx.model) return;
     console.log('✅ AI key selected', {
       source: ctx.keySource,
       provider: ctx.provider,
       model: ctx.model,
+      apiKey: maskKey(ctx.apiKey),
       cache: ctx.debug.cache,
     });
   }
@@ -500,7 +507,9 @@ async function proxyToProvider({
 
   // --- Gemini (Google Generative Language API) ---
   if (normalized === 'gemini' || normalized === 'google') {
-    const url = `https://generativelanguage.googleapis.com/${apiVersion}/models/${model}:generateMessage`;
+    // Gemini uses v1 (or v1beta2); ignore OpenAI-style apiVersion values like 2024-12-01
+    const geminiApiVersion = apiVersion && apiVersion.startsWith('v') ? apiVersion : 'v1';
+    const url = `https://generativelanguage.googleapis.com/${geminiApiVersion}/models/${model}:generateMessage`;
     const headers = {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${apiKey}`,
