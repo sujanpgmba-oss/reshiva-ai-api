@@ -479,7 +479,14 @@ async function proxyToProvider({
       body: JSON.stringify(body),
     });
 
-    const data = await res.json();
+    const text = await res.text();
+    let data = null;
+    try {
+      data = text ? JSON.parse(text) : null;
+    } catch (err) {
+      console.warn('⚠️ OpenAI response is not valid JSON (may be empty):', text);
+      data = { raw: text };
+    }
     return { status: res.status, data };
   }
 
@@ -515,7 +522,14 @@ async function proxyToProvider({
       body: JSON.stringify(body),
     });
 
-    const data = await res.json();
+    const text = await res.text();
+    let data = null;
+    try {
+      data = text ? JSON.parse(text) : null;
+    } catch (err) {
+      console.warn('⚠️ Gemini response is not valid JSON (may be empty):', text);
+      data = { raw: text };
+    }
     return { status: res.status, data };
   }
 
@@ -549,7 +563,14 @@ async function proxyToProvider({
       body: JSON.stringify(body),
     });
 
-    const data = await res.json();
+    const text = await res.text();
+    let data = null;
+    try {
+      data = text ? JSON.parse(text) : null;
+    } catch (err) {
+      console.warn('⚠️ Claude response is not valid JSON (may be empty):', text);
+      data = { raw: text };
+    }
     return { status: res.status, data };
   }
 
