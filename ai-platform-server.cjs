@@ -508,11 +508,10 @@ async function proxyToProvider({
 
   // --- Gemini (Google Generative Language API) ---
   if (normalized === 'gemini' || normalized === 'google') {
-    // Gemini is hosted under v1beta2; API key is passed via query param.
-    // Normalize any version to the supported v1beta2 endpoint.
+    // Gemini API version is passed through from the user's config (e.g. v1, v1beta, v1beta2).
+    // When not provided, default to the known stable endpoint (v1beta2).
     const geminiApiVersion = apiVersion && apiVersion.startsWith('v') ? apiVersion : 'v1beta2';
-    const normalizedGeminiApiVersion = geminiApiVersion.startsWith('v1beta') ? 'v1beta2' : 'v1beta2';
-    const url = `https://generativelanguage.googleapis.com/${normalizedGeminiApiVersion}/models/${model}:generateMessage?key=${apiKey}`;
+    const url = `https://generativelanguage.googleapis.com/${geminiApiVersion}/models/${model}:generateMessage?key=${apiKey}`;
     const headers = {
       'Content-Type': 'application/json',
     };
@@ -554,11 +553,11 @@ async function proxyToProvider({
     }
 
     // ### Fallback: some Gemini endpoints expect `generateText` style payloads
-    if (
-      res.status === 400 &&
-      typeof text === 'string' &&
-      /Unknown name\\?\s*\"?messages\"?/i.test(text)
-    ) {
+    const geminiMessageError =
+      (typeof text === 'string' && /Unknown name\\?\s*\"?messages\"?/i.test(text)) ||
+      (data?.error?.message && /Unknown name\\?\s*\"?messages\"?/i.test(String(data.error.message)));
+
+    if (res.status === 400 && geminiMessageError) {
       const prompt = (payload?.messages || [])
         .map((m) => {
           const role = m.role === 'assistant' ? 'Assistant' : 'User';
@@ -566,7 +565,7 @@ async function proxyToProvider({
         })
         .join('\n');
 
-      const fallbackUrl = `https://generativelanguage.googleapis.com/${normalizedGeminiApiVersion}/models/${model}:generateText?key=${apiKey}`;
+      const fallbackUrl = `https://generativelanguage.googleapis.com/${geminiApiVersion}/models/${model}:generateText?key=${apiKey}`;
       const fallbackBody = {
         instances: [{ input: prompt }],
         ...(payload?.temperature ? { temperature: payload.temperature } : {}),
