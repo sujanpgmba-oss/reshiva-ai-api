@@ -517,6 +517,8 @@ async function proxyToProvider({
     };
 
     const redactedUrl = url.replace(/([?&]key=)[^&]+/, '$1<redacted>');
+    const showFullKey = process.env.GEMINI_LOG_FULL_KEYS === '1';
+    const loggedUrl = showFullKey ? url : redactedUrl;
 
 
     const messages = (payload?.messages || []).map((m) => {
@@ -537,7 +539,7 @@ async function proxyToProvider({
       ...(payload?.max_tokens ? { maxOutputTokens: payload.max_tokens } : {}),
     };
 
-    const res = await fetchFn(url, {
+    let res = await fetchFn(url, {
       method: 'POST',
       headers,
       body: JSON.stringify(body),
@@ -550,6 +552,34 @@ async function proxyToProvider({
     } catch (err) {
       console.warn('⚠️ Gemini response is not valid JSON (may be empty):', text);
       data = { raw: text };
+    }
+
+    // If Gemini returns 404 for generateMessage, retry using v1beta2 (common fallback)
+    if (res.status === 404 && geminiApiVersion !== 'v1beta2') {
+      const retryVersion = 'v1beta2';
+      const retryUrl = `https://generativelanguage.googleapis.com/${retryVersion}/models/${model}:generateMessage?key=${apiKey}`;
+      const retryRedactedUrl = retryUrl.replace(/([?&]key=)[^&]+/, '$1<redacted>');
+      console.log('🔁 retrying Gemini with v1beta2 after 404', {
+        provider: 'gemini',
+        model,
+        url: showFullKey ? retryUrl : retryRedactedUrl,
+        originalUrl: loggedUrl,
+        status: res.status,
+      });
+
+      res = await fetchFn(retryUrl, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+      });
+
+      text = await res.text();
+      try {
+        data = text ? JSON.parse(text) : null;
+      } catch (err) {
+        console.warn('⚠️ Gemini retry response is not valid JSON (may be empty):', text);
+        data = { raw: text };
+      }
     }
 
     // ### Fallback: some Gemini endpoints expect `generateText` style payloads
@@ -603,7 +633,7 @@ async function proxyToProvider({
       provider: 'gemini',
       model,
       status: res.status,
-      url: redactedUrl,
+      url: loggedUrl,
       snippet: text ? text.slice(0, 400) : '',
     });
 
