@@ -696,6 +696,12 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// Catch-all route to help diagnose 404s (especially in deployed environments)
+app.use((req, res) => {
+  console.warn('⚠️ Unhandled route', { method: req.method, path: req.path });
+  res.status(404).json({ error: 'not_found', path: req.path });
+});
+
 /**
  * POST /api/ai/request
  * Body: { userId?, facultyId?, workflow, payload }
